@@ -21,7 +21,8 @@ ENV PWDPATH="/home/step/secrets/password"
 
 VOLUME ["/home/step"]
 STOPSIGNAL SIGTERM
-HEALTHCHECK CMD step ca health 2>/dev/null | grep "^ok" >/dev/null
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD step ca health
 
 COPY docker/entrypoint.sh /entrypoint.sh
 
