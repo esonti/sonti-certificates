@@ -1,0 +1,60 @@
+# =============================================================================
+# CD - sonti-certificates
+# =============================================================================
+# Builds and pushes Docker image to GCP Artifact Registry on version tags.
+# Separate from upstream ci.yml to avoid conflicts with smallstep/certificates.
+# =============================================================================
+
+name: CD
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # Required for GCP Workload Identity Federation
+
+jobs:
+  push-to-registry:
+    name: Push to Artifact Registry
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-east1-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: |
+            us-east1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rallymate/sonti-certificates:${{ steps.tag.outputs.tag }}
+            us-east1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/rallymate/sonti-certificates:latest
+          cache-from: type=gha,scope=sonti-certificates
+          cache-to: type=gha,mode=max,scope=sonti-certificates
